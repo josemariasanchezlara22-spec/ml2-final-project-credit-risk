@@ -70,6 +70,10 @@ st.markdown(
         color: var(--text);
     }
 
+    body, .stApp, .block-container, p, div, span, label, input, textarea, select {
+        color: var(--text);
+    }
+
     .block-container {
         max-width: 1280px;
         padding-top: 1rem;
@@ -127,7 +131,7 @@ st.markdown(
     }
 
     .surface-subtitle {
-        color: var(--muted) !important;
+        color: #516276 !important;
         line-height: 1.55;
         font-size: 0.94rem;
     }
@@ -140,7 +144,7 @@ st.markdown(
     }
 
     .info-box {
-        background: var(--surface-soft);
+        background: #eef4fb;
         border: 1px solid var(--border);
         border-radius: 14px;
         padding: 0.85rem 0.95rem;
@@ -148,7 +152,7 @@ st.markdown(
     }
 
     .artifact {
-        background: #f7faff;
+        background: #f3f7fc;
         border: 1px solid var(--border);
         border-radius: 12px;
         padding: 0.8rem 0.85rem;
@@ -166,7 +170,7 @@ st.markdown(
     }
 
     .metric-label {
-        color: var(--muted) !important;
+        color: #516276 !important;
         font-weight: 800;
         font-size: 0.85rem;
     }
@@ -210,7 +214,7 @@ st.markdown(
     .stButton > button {
         border-radius: 999px;
         font-weight: 800;
-        border: 1px solid #9bb7da;
+        border: 1px solid #8fb0d6;
         background: #ffffff;
         color: var(--primary) !important;
         min-height: 2.75rem;
@@ -218,15 +222,34 @@ st.markdown(
     }
 
     .stButton > button[kind="primary"] {
-        background: var(--accent);
+        background: #1f5fe0;
         color: #ffffff !important;
-        border-color: var(--accent);
+        border-color: #1f5fe0;
+        box-shadow: 0 8px 18px rgba(31, 95, 224, 0.18);
+    }
+
+    .stButton > button[kind="secondary"] {
+        background: #ffffff;
+        color: var(--primary) !important;
+        border-color: #7f9cc4;
+    }
+
+    .stButton > button[kind="primary"]:hover {
+        background: #174cc4;
+        color: #ffffff !important;
+        border-color: #174cc4;
+    }
+
+    .stButton > button[kind="secondary"]:hover {
+        background: #eef4fb;
+        color: var(--primary) !important;
+        border-color: #6d89b0;
     }
 
     .stButton > button:disabled {
-        background: #eef2f7 !important;
-        color: #94a3b8 !important;
-        border-color: #d5deea !important;
+        background: #edf2f7 !important;
+        color: #8aa0b8 !important;
+        border-color: #d2dcea !important;
         opacity: 1;
     }
 
@@ -238,6 +261,39 @@ st.markdown(
     }
 
     h1, h2, h3, h4, h5, h6 {
+        color: var(--text) !important;
+    }
+
+    div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {
+        color: var(--text) !important;
+    }
+
+    div[data-testid="stMetricLabel"], div[data-testid="stMetricLabel"] * {
+        color: #516276 !important;
+    }
+
+    input, textarea, select {
+        background: #ffffff !important;
+        border: 1px solid #b9c8da !important;
+        color: var(--text) !important;
+    }
+
+    input::placeholder, textarea::placeholder {
+        color: #6f8198 !important;
+        opacity: 1;
+    }
+
+    section[data-testid="stSidebar"] {
+        background: #ffffff;
+        border-right: 1px solid var(--border);
+    }
+
+    section[data-testid="stSidebar"] * {
+        color: var(--text) !important;
+    }
+
+    div[data-testid="stRadio"] label,
+    div[data-testid="stRadio"] label * {
         color: var(--text) !important;
     }
     </style>
