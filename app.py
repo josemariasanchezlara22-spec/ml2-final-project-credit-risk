@@ -531,13 +531,14 @@ def feature_bounds(name: str, metadata: dict[str, Any]):
     return None, None, None
 
 
-def build_input_widgets(columns: list[str], metadata: dict[str, Any]) -> dict[str, Any]:
+def build_input_widgets(columns: list[str], metadata: dict[str, Any], defaults: dict[str, Any] | None = None) -> dict[str, Any]:
     inputs: dict[str, Any] = {}
+    defaults = defaults or {}
     cols = st.columns(3)
 
     for idx, feature in enumerate(columns):
         kind = infer_feature_kind(feature, metadata)
-        default = feature_default(feature, metadata, kind)
+        default = defaults.get(feature, feature_default(feature, metadata, kind))
         category_values = feature_categories(feature, metadata)
         min_value, max_value, step = feature_bounds(feature, metadata)
         target_col = cols[idx % 3]
@@ -547,7 +548,17 @@ def build_input_widgets(columns: list[str], metadata: dict[str, Any]) -> dict[st
                 inputs[feature] = st.selectbox(
                     feature,
                     category_values,
-                    index=0 if default not in category_values else category_values.index(str(default)),
+                    index=0 if str(default) not in category_values else category_values.index(str(default)),
+                    key=f"feat_{feature}",
+                )
+            elif feature in defaults and isinstance(default, (int, float, np.integer, np.floating)):
+                num_default = float(default)
+                inputs[feature] = st.number_input(
+                    feature,
+                    value=num_default,
+                    min_value=0.0 if num_default in (0.0, 1.0) else (float(min_value) if min_value is not None else None),
+                    max_value=1.0 if num_default in (0.0, 1.0) else (float(max_value) if max_value is not None else None),
+                    step=1.0 if num_default in (0.0, 1.0) else (float(step) if step is not None else 1.0),
                     key=f"feat_{feature}",
                 )
             elif kind == "bool":
@@ -567,11 +578,7 @@ def build_input_widgets(columns: list[str], metadata: dict[str, Any]) -> dict[st
                     kwargs["step"] = float(step)
                 inputs[feature] = st.number_input(feature, key=f"feat_{feature}", **kwargs)
             else:
-                inputs[feature] = st.text_input(
-                    feature,
-                    value="Unknown" if default in ("", None) else str(default),
-                    key=f"feat_{feature}",
-                )
+                inputs[feature] = st.text_input(feature, value="Unknown" if default in ("", None) else str(default), key=f"feat_{feature}")
 
     return inputs
 
@@ -607,6 +614,17 @@ def summarize_column_kinds(columns: list[str], metadata: dict[str, Any]) -> dict
         else:
             summary["text"] += 1
     return summary
+
+
+def seed_prediction_widget_state(columns: list[str], defaults: dict[str, Any]):
+    version_key = "_prediction_defaults_version"
+    current_version = 2
+    if st.session_state.get(version_key) != current_version:
+        for feature in columns:
+            widget_key = f"feat_{feature}"
+            if feature in defaults:
+                st.session_state[widget_key] = defaults[feature]
+        st.session_state[version_key] = current_version
 
 
 def build_dataframe_from_inputs(inputs: dict[str, Any], columns: list[str]) -> pd.DataFrame:
@@ -735,6 +753,8 @@ metrics = extract_metrics(metadata)
 threshold = extract_probability_cutoff(metadata)
 column_summary = summarize_column_kinds(columns, metadata) if columns else {"numeric": 0, "categorical": 0, "bool": 0, "text": 0}
 default_row = build_default_row(columns, metadata) if columns else {}
+if columns:
+    seed_prediction_widget_state(columns, default_row)
 
 
 # =========================================================
@@ -916,7 +936,7 @@ elif page == "Predicción":
             st.caption(f"El bundle espera {len(columns)} columnas. La mayoría ya viene con valores por defecto.")
 
         with st.form("prediction_form"):
-            inputs = build_input_widgets(columns, metadata)
+            inputs = build_input_widgets(columns, metadata, default_row)
             submitted = st.form_submit_button("Ejecutar con los valores del formulario", type="primary")
 
         if run_default:
