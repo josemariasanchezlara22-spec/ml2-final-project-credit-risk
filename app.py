@@ -14,6 +14,70 @@ try:
 except Exception:  # pragma: no cover
     shap = None
 
+
+def render_local_shap(model_obj, explainer_obj, row_df: pd.DataFrame):
+    st.markdown('<div class="section-title">Explicabilidad SHAP</div>', unsafe_allow_html=True)
+
+    if shap is None:
+        st.info("SHAP no está instalado en este entorno.")
+        return
+
+    if explainer_obj is None:
+        st.info("No se pudo construir un explainer SHAP para este modelo.")
+        return
+
+    try:
+        shap_input = row_df.copy()
+        shap_input.columns = [
+            str(col).strip().replace(" ", "_").replace("<", "lt_").replace(">", "gt_").replace("[", "_").replace("]", "_").replace(",", "_")
+            for col in shap_input.columns
+        ]
+
+        shap_values = explainer_obj.shap_values(shap_input.to_numpy())
+        expected_value = explainer_obj.expected_value
+
+        if isinstance(shap_values, list):
+            shap_values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
+
+        shap_values = np.asarray(shap_values).reshape(-1)
+        feature_names = list(shap_input.columns)
+        values = row_df.iloc[0].tolist()
+
+        shap_df = pd.DataFrame(
+            {
+                "feature": feature_names,
+                "value": values,
+                "shap_value": shap_values,
+                "impact_abs": np.abs(shap_values),
+            }
+        ).sort_values("impact_abs", ascending=False).head(10)
+
+        c1, c2 = st.columns([1.05, 1])
+
+        with c1:
+            fig, ax = plt.subplots(figsize=(8, 4.8))
+            colors = ["#d9534f" if v > 0 else "#2ca25f" for v in shap_df["shap_value"]]
+            ax.barh(shap_df["feature"][::-1], shap_df["shap_value"][::-1], color=colors[::-1])
+            ax.axvline(0, color="#94a3b8", linewidth=1)
+            ax.set_title("Top contribuciones SHAP", fontsize=12, fontweight="bold")
+            ax.set_xlabel("Impacto sobre la predicción")
+            ax.set_ylabel("")
+            ax.grid(axis="x", alpha=0.2)
+            st.pyplot(fig, clear_figure=True)
+
+        with c2:
+            st.dataframe(
+                shap_df[["feature", "value", "shap_value"]],
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption("Valores positivos empujan la predicción hacia la clase de riesgo.")
+
+        st.caption(f"Expected value: {expected_value}")
+
+    except Exception as exc:
+        st.warning(f"No se pudo calcular SHAP para esta predicción: {exc}")
+
 import matplotlib.pyplot as plt
 
 
@@ -893,6 +957,53 @@ if columns:
 
 
 # =========================================================
+# HIGH-CONTRAST OVERRIDES
+# =========================================================
+
+st.markdown(
+    """
+    <style>
+    .stJson, div[data-testid="stJson"], pre, pre code, code {
+        background: #0f172a !important;
+        color: #e5eefc !important;
+    }
+    .stJson, div[data-testid="stJson"] {
+        border: 1px solid #24364f !important;
+        border-radius: 12px !important;
+    }
+    .stJson *, div[data-testid="stJson"] * {
+        color: #e5eefc !important;
+    }
+    .stDownloadButton > button, div[data-testid="stDownloadButton"] button {
+        background: #0f172a !important;
+        border: 1px solid #334155 !important;
+        color: #ffffff !important;
+    }
+    .stDownloadButton > button *, div[data-testid="stDownloadButton"] button * {
+        color: #ffffff !important;
+    }
+    .stDownloadButton > button:hover, div[data-testid="stDownloadButton"] button:hover {
+        background: #1e293b !important;
+        border-color: #475569 !important;
+    }
+    .stButton > button, .stButton > button * {
+        color: inherit !important;
+    }
+    .stCaption, .stCaption *, caption, small {
+        color: #516276 !important;
+    }
+    div[data-testid="stAlert"], div[data-testid="stAlert"] * {
+        color: #0f172a !important;
+    }
+    .stDataFrame, div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+        color: var(--text) !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# =========================================================
 # UI
 # =========================================================
 
@@ -932,6 +1043,55 @@ page = st.radio(
     horizontal=True,
     label_visibility="collapsed",
 )
+
+
+def predict_batch_ordered(model_obj, df: pd.DataFrame, defaults: dict[str, Any]) -> pd.DataFrame:
+    df = standardize_to_model_schema(df, model_obj, defaults)
+    out = df.copy()
+    out["label"] = model_obj.predict(df)
+    if hasattr(model_obj, "predict_proba"):
+        proba = model_obj.predict_proba(df)
+        classes = list(getattr(model_obj, "classes_", [0, 1]))
+        pos_index = classes.index(1) if 1 in classes and proba.ndim == 2 and len(classes) > 1 else 1 if proba.ndim == 2 and proba.shape[1] > 1 else 0
+        out["probability"] = proba[:, pos_index] if proba.ndim == 2 else proba
+    first_cols = ["label"]
+    if "probability" in out.columns:
+        first_cols.append("probability")
+    remaining_cols = [c for c in out.columns if c not in first_cols]
+    return out[first_cols + remaining_cols]
+
+if page == "Procesamiento por lotes":
+    st.markdown('<div class="section-title">Procesamiento por lotes</div>', unsafe_allow_html=True)
+    st.caption("Carga un CSV con uno o más registros. Si entra un solo registro, además se muestra SHAP.")
+
+    if not columns:
+        st.warning("No se encontraron columnas en model_columns.pkl. Revisa el artefacto.")
+    else:
+        uploaded = st.file_uploader("Sube un CSV para clasificar", type=["csv"])
+        if uploaded is not None:
+            try:
+                raw_df = pd.read_csv(uploaded, sep=None, engine="python")
+                batch_df = raw_df.copy()
+                for col in columns:
+                    if col not in batch_df.columns:
+                        batch_df[col] = default_row.get(col, 0)
+                batch_df = batch_df[columns]
+                preds_df = predict_batch_ordered(model, batch_df, default_row)
+                st.success(f"Se procesaron {len(preds_df)} registros.")
+                st.dataframe(preds_df, use_container_width=True)
+                st.download_button(
+                    "Descargar predicciones CSV",
+                    data=preds_df.to_csv(index=False).encode("utf-8"),
+                    file_name="batch_predictions.csv",
+                    mime="text/csv",
+                )
+                if len(preds_df) == 1:
+                    render_local_shap(model, explainer, batch_df.iloc[[0]])
+                else:
+                    st.info("Como el archivo contiene más de un registro, solo se muestran las predicciones.")
+            except Exception as exc:
+                st.error(f"No se pudo procesar el archivo CSV: {exc}")
+    st.stop()
 
 
 def render_metrics(metrics_dict: dict[str, Any]):
