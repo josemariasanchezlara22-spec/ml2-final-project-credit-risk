@@ -407,6 +407,19 @@ def esc(value: Any) -> str:
     return html.escape("" if value is None else str(value))
 
 
+def sanitize_shap_name(name: str) -> str:
+    return (
+        str(name)
+        .strip()
+        .replace(" ", "_")
+        .replace("<", "lt_")
+        .replace(">", "gt_")
+        .replace("[", "_")
+        .replace("]", "_")
+        .replace(",", "_")
+    )
+
+
 @st.cache_resource
 def get_storage_client():
     return storage.Client()
@@ -946,7 +959,13 @@ def render_local_shap(model_obj, explainer_obj, row_df: pd.DataFrame):
         return
 
     try:
-        shap_values = explainer_obj.shap_values(row_df)
+        shap_input = row_df.copy()
+        shap_input.columns = [sanitize_shap_name(col) for col in shap_input.columns]
+
+        # SHAP/XGBoost falla con nombres que contienen '<', '[', ']' o ','.
+        # Para explicabilidad usamos una versión interna sanitizada y mantenemos
+        # los nombres originales solo para la vista.
+        shap_values = explainer_obj.shap_values(shap_input.to_numpy())
         expected = explainer_obj.expected_value
 
         if isinstance(shap_values, list):
@@ -955,7 +974,7 @@ def render_local_shap(model_obj, explainer_obj, row_df: pd.DataFrame):
             else:
                 shap_values = shap_values[0]
         shap_values = np.asarray(shap_values).reshape(-1)
-        feature_names = list(row_df.columns)
+        feature_names = [sanitize_shap_name(col) for col in row_df.columns]
         values = row_df.iloc[0].tolist()
 
         shap_df = pd.DataFrame(
