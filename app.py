@@ -1082,6 +1082,7 @@ def predict_batch_ordered(model_obj, df: pd.DataFrame, defaults: dict[str, Any])
     return out[first_cols + remaining_cols]
 
 if page == "Procesamiento por lotes":
+    render_label_meaning_card_inline()
     st.markdown('<div class="section-title">Procesamiento por lotes</div>', unsafe_allow_html=True)
     st.caption("Carga un CSV con uno o más registros. Si entra un solo registro, además se muestra SHAP.")
 
@@ -1245,6 +1246,7 @@ if page == "Inicio":
         st.info("No se pudieron leer columnas esperadas desde el artefacto.")
 
 elif page == "Predicción":
+    render_label_meaning_card_inline()
     st.markdown('<div class="section-title">Predicción</div>', unsafe_allow_html=True)
     st.caption("Puedes ejecutar una predicción rápida con el perfil base o ajustar solo las variables que necesites.")
 
@@ -1327,6 +1329,7 @@ elif page == "Predicción":
                 st.error(f"No se pudo ejecutar la predicción: {exc}")
 
 elif page == "Explicabilidad":
+    render_label_meaning_card_inline()
     st.markdown('<div class="section-title">Explicabilidad</div>', unsafe_allow_html=True)
     st.caption("Esta vista usa la última predicción para mostrar contribuciones SHAP.")
 
@@ -1336,6 +1339,7 @@ elif page == "Explicabilidad":
         render_local_shap(model, explainer, st.session_state.last_input)
 
 elif page == "Procesamiento por lotes":
+    render_label_meaning_card_inline()
     st.markdown('<div class="section-title">Procesamiento por lotes</div>', unsafe_allow_html=True)
     st.caption("Carga un CSV con uno o más registros. Si entra un solo registro, además se muestra SHAP.")
 
@@ -1422,7 +1426,3 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if page in ("Predicción", "Procesamiento por lotes"):
-    render_label_meaning_card_inline()
-if "page" in globals() and page in ("Predicción", "Procesamiento por lotes"):
-    render_label_meaning_card_inline()
