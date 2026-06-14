@@ -78,6 +78,26 @@ def render_local_shap(model_obj, explainer_obj, row_df: pd.DataFrame):
     except Exception as exc:
         st.warning(f"No se pudo calcular SHAP para esta predicción: {exc}")
 
+
+def render_label_meaning_card():
+    st.markdown(
+        """
+        <div class="surface">
+            <div class="surface-title">Significado de la etiqueta</div>
+            <div class="surface-subtitle">
+                <strong>0</strong> = bajo riesgo / no moroso
+                <br>
+                <strong>1</strong> = alto riesgo / moroso
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_label_meaning_card_inline():
+    render_label_meaning_card()
+
 import matplotlib.pyplot as plt
 
 
@@ -1012,6 +1032,7 @@ st.markdown(
     <div class="hero">
         <div class="hero-badge">Streamlit · Google Cloud Run · GCS</div>
         <h1>Credit Risk XGB</h1>
+        <h2>Hecho por: Emanuel Landero, Daniel Sandoval y José María Sánchez</h2>
         <p>
             Panel para desplegar un modelo de riesgo crediticio con predicción, métricas del bundle
             y explicabilidad local con SHAP.
@@ -1031,7 +1052,7 @@ st.markdown(
     """
     <div class="info-box">
         La app lee tres artefactos desde GCS: el modelo, la lista de columnas esperadas y la metadata
-        con métricas/configuración. Si tu bundle cambia, solo ajusta las rutas en variables de entorno.
+        con métricas/configuración.
     </div>
     """,
     unsafe_allow_html=True,
@@ -1400,3 +1421,8 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+if page in ("Predicción", "Procesamiento por lotes"):
+    render_label_meaning_card_inline()
+if "page" in globals() and page in ("Predicción", "Procesamiento por lotes"):
+    render_label_meaning_card_inline()
