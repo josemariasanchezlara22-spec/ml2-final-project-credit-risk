@@ -416,7 +416,7 @@ def feature_default(name: str, metadata: dict[str, Any], kind: str):
         return 0
     if kind == "numeric":
         return 0.0
-    return ""
+    return "Unknown"
 
 
 def feature_categories(name: str, metadata: dict[str, Any]) -> list[str]:
@@ -477,9 +477,42 @@ def build_input_widgets(columns: list[str], metadata: dict[str, Any]) -> dict[st
                     kwargs["step"] = float(step)
                 inputs[feature] = st.number_input(feature, key=f"feat_{feature}", **kwargs)
             else:
-                inputs[feature] = st.text_input(feature, value=str(default), key=f"feat_{feature}")
+                inputs[feature] = st.text_input(
+                    feature,
+                    value="Unknown" if default in ("", None) else str(default),
+                    key=f"feat_{feature}",
+                )
 
     return inputs
+
+
+def build_default_row(columns: list[str], metadata: dict[str, Any]) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
+    for feature in columns:
+        kind = infer_feature_kind(feature, metadata)
+        category_values = feature_categories(feature, metadata)
+        default = feature_default(feature, metadata, kind)
+
+        if category_values:
+            defaults[feature] = default if default in category_values else category_values[0]
+        elif kind == "bool":
+            defaults[feature] = int(bool(default))
+        elif kind == "numeric":
+            defaults[feature] = float(default) if default not in ("", None) else 0.0
+        else:
+            defaults[feature] = "Unknown" if default in ("", None) else str(default)
+    return defaults
+
+
+def summarize_column_kinds(columns: list[str], metadata: dict[str, Any]) -> dict[str, int]:
+    summary = {"numeric": 0, "categorical": 0, "bool": 0, "text": 0}
+    for feature in columns:
+        kind = infer_feature_kind(feature, metadata)
+        if kind in summary:
+            summary[kind] += 1
+        else:
+            summary["text"] += 1
+    return summary
 
 
 def build_dataframe_from_inputs(inputs: dict[str, Any], columns: list[str]) -> pd.DataFrame:
@@ -606,6 +639,8 @@ metadata = artifacts["metadata"]
 explainer = artifacts["explainer"]
 metrics = extract_metrics(metadata)
 threshold = extract_probability_cutoff(metadata)
+column_summary = summarize_column_kinds(columns, metadata) if columns else {"numeric": 0, "categorical": 0, "bool": 0, "text": 0}
+default_row = build_default_row(columns, metadata) if columns else {}
 
 
 # =========================================================
@@ -748,6 +783,7 @@ if page == "Inicio":
         st.write("Modelo:", MODEL_BLOB)
         st.write("Columnas:", COLUMNS_BLOB)
         st.write("Metadata:", METADATA_BLOB)
+        st.write("Distribución de columnas:", column_summary)
         st.markdown('</div>', unsafe_allow_html=True)
 
     with right:
@@ -756,16 +792,71 @@ if page == "Inicio":
         render_metrics(metrics)
         st.markdown('</div>', unsafe_allow_html=True)
 
+    st.markdown('<div class="section-title">Columnas esperadas</div>', unsafe_allow_html=True)
+    st.caption("La lista completa sale de `model_columns.pkl`; aquí ves el total y una vista previa para validar el esquema.")
+    if columns:
+        preview_df = pd.DataFrame(
+            {
+                "feature": columns[:20],
+                "default": [default_row.get(col) for col in columns[:20]],
+                "kind": [infer_feature_kind(col, metadata) for col in columns[:20]],
+            }
+        )
+        st.dataframe(preview_df, use_container_width=True, hide_index=True)
+        with st.expander(f"Ver todas las columnas ({len(columns)})"):
+            st.write(columns)
+    else:
+        st.info("No se pudieron leer columnas esperadas desde el artefacto.")
+
 elif page == "Predicción":
     st.markdown('<div class="section-title">Predicción</div>', unsafe_allow_html=True)
-    st.caption("Completa el formulario con las variables que espera el bundle del modelo.")
+    st.caption("Puedes ejecutar una predicción rápida con el perfil base o ajustar solo las variables que necesites.")
 
     if not columns:
         st.warning("No se encontraron columnas en model_columns.pkl. Revisa el artefacto.")
     else:
+        top_left, top_right = st.columns([1, 1])
+        with top_left:
+            run_default = st.button("Ejecutar con perfil base", type="primary")
+        with top_right:
+            st.caption(f"El bundle espera {len(columns)} columnas. La mayoría ya viene con valores por defecto.")
+
         with st.form("prediction_form"):
             inputs = build_input_widgets(columns, metadata)
-            submitted = st.form_submit_button("Ejecutar predicción", type="primary")
+            submitted = st.form_submit_button("Ejecutar con los valores del formulario", type="primary")
+
+        if run_default:
+            inputs = default_row.copy()
+            row_df = build_dataframe_from_inputs(inputs, columns)
+            st.session_state.last_input = row_df.copy()
+
+            try:
+                y_pred, probability, raw_proba = predict(model, row_df)
+                label, pill_class = risk_label(probability, y_pred)
+                st.session_state.last_prediction = {
+                    "y_pred": y_pred,
+                    "probability": probability,
+                    "raw_proba": raw_proba.tolist() if isinstance(raw_proba, np.ndarray) else raw_proba,
+                }
+
+                p1, p2 = st.columns([0.7, 1.3])
+                with p1:
+                    st.markdown(f'<div class="pill {pill_class}">{label}</div>', unsafe_allow_html=True)
+                    if probability is not None:
+                        st.metric("Probabilidad de riesgo", f"{probability:.3f}")
+                    st.metric("Clase predicha", y_pred)
+                    st.metric("Threshold", f"{threshold:.2f}")
+
+                with p2:
+                    st.markdown('<div class="surface">', unsafe_allow_html=True)
+                    st.markdown('<div class="surface-title">Entrada enviada</div>', unsafe_allow_html=True)
+                    st.dataframe(row_df, use_container_width=True, hide_index=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                render_local_shap(model, explainer, row_df)
+
+            except Exception as exc:
+                st.error(f"No se pudo ejecutar la predicción con el perfil base: {exc}")
 
         if submitted:
             row_df = build_dataframe_from_inputs(inputs, columns)
