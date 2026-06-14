@@ -106,6 +106,7 @@ DEFAULT_PREDICTION_VALUES = {
     "emp_length_8 years": 0.0,
     "emp_length_9 years": 0.0,
     "emp_length__lt_ 1 year": 0.0,
+    "emp_length_< 1 year": 0.0,
     "home_ownership_MORTGAGE": 0.0,
     "home_ownership_NONE": 0.0,
     "home_ownership_OTHER": 0.0,
@@ -127,6 +128,11 @@ DEFAULT_PREDICTION_VALUES = {
     "purpose_small_business": 0.0,
     "purpose_vacation": 0.0,
     "purpose_wedding": 0.0,
+}
+
+FEATURE_NAME_ALIASES = {
+    "emp_length_< 1 year": ["emp_length__lt_ 1 year"],
+    "emp_length__lt_ 1 year": ["emp_length_< 1 year"],
 }
 
 
@@ -586,22 +592,27 @@ def build_input_widgets(columns: list[str], metadata: dict[str, Any], defaults: 
 def build_default_row(columns: list[str], metadata: dict[str, Any]) -> dict[str, Any]:
     defaults: dict[str, Any] = {}
     for feature in columns:
+        resolved_feature = resolve_column_name(feature, columns)
+
         if feature in DEFAULT_PREDICTION_VALUES:
-            defaults[feature] = DEFAULT_PREDICTION_VALUES[feature]
+            defaults[resolved_feature] = DEFAULT_PREDICTION_VALUES[feature]
+            continue
+        if resolved_feature in DEFAULT_PREDICTION_VALUES:
+            defaults[resolved_feature] = DEFAULT_PREDICTION_VALUES[resolved_feature]
             continue
 
-        kind = infer_feature_kind(feature, metadata)
-        category_values = feature_categories(feature, metadata)
-        default = feature_default(feature, metadata, kind)
+        kind = infer_feature_kind(resolved_feature, metadata)
+        category_values = feature_categories(resolved_feature, metadata)
+        default = feature_default(resolved_feature, metadata, kind)
 
         if category_values:
-            defaults[feature] = default if default in category_values else category_values[0]
+            defaults[resolved_feature] = default if default in category_values else category_values[0]
         elif kind == "bool":
-            defaults[feature] = int(bool(default))
+            defaults[resolved_feature] = int(bool(default))
         elif kind == "numeric":
-            defaults[feature] = float(default) if default not in ("", None) else 0.0
+            defaults[resolved_feature] = float(default) if default not in ("", None) else 0.0
         else:
-            defaults[feature] = "Unknown" if default in ("", None) else str(default)
+            defaults[resolved_feature] = "Unknown" if default in ("", None) else str(default)
     return defaults
 
 
@@ -614,6 +625,74 @@ def summarize_column_kinds(columns: list[str], metadata: dict[str, Any]) -> dict
         else:
             summary["text"] += 1
     return summary
+
+
+def resolve_column_name(name: str, columns: list[str]) -> str:
+    if name in columns:
+        return name
+    for alias in FEATURE_NAME_ALIASES.get(name, []):
+        if alias in columns:
+            return alias
+    return name
+
+
+def get_model_feature_names(model_obj) -> list[str]:
+    if model_obj is None:
+        return []
+
+    if hasattr(model_obj, "feature_names_in_"):
+        try:
+            return [str(v) for v in model_obj.feature_names_in_]
+        except Exception:
+            pass
+
+    if hasattr(model_obj, "get_booster"):
+        try:
+            booster = model_obj.get_booster()
+            if hasattr(booster, "feature_names") and booster.feature_names:
+                return [str(v) for v in booster.feature_names]
+        except Exception:
+            pass
+
+    if hasattr(model_obj, "get_xgb_params"):
+        try:
+            booster = model_obj.get_booster()
+            if hasattr(booster, "feature_names") and booster.feature_names:
+                return [str(v) for v in booster.feature_names]
+        except Exception:
+            pass
+
+    return []
+
+
+def standardize_to_model_schema(df: pd.DataFrame, model_obj, defaults: dict[str, Any]) -> pd.DataFrame:
+    expected = get_model_feature_names(model_obj)
+    if not expected:
+        expected = list(df.columns)
+
+    aligned = df.copy()
+    rename_map = {}
+    available = set(aligned.columns)
+
+    for target in expected:
+        if target in available:
+            continue
+        for alias in FEATURE_NAME_ALIASES.get(target, []):
+            if alias in available:
+                rename_map[alias] = target
+                available.remove(alias)
+                available.add(target)
+                break
+
+    if rename_map:
+        aligned = aligned.rename(columns=rename_map)
+
+    for target in expected:
+        if target not in aligned.columns:
+            aligned[target] = defaults.get(target, 0)
+
+    aligned = aligned[expected]
+    return aligned
 
 
 def seed_prediction_widget_state(columns: list[str], defaults: dict[str, Any]):
@@ -639,7 +718,50 @@ def build_dataframe_from_inputs(inputs: dict[str, Any], columns: list[str]) -> p
     return pd.DataFrame([row], columns=columns)
 
 
+def align_batch_dataframe(df: pd.DataFrame, columns: list[str], defaults: dict[str, Any]) -> pd.DataFrame:
+    aligned = df.copy()
+
+    for feature in columns:
+        if feature not in aligned.columns:
+            aligned[feature] = defaults.get(feature, 0)
+
+    aligned = aligned[columns]
+
+    for feature in columns:
+        default_value = defaults.get(feature, 0)
+        if isinstance(default_value, str):
+            aligned[feature] = aligned[feature].fillna(default_value).astype(str)
+        else:
+            aligned[feature] = pd.to_numeric(aligned[feature], errors="coerce")
+            aligned[feature] = aligned[feature].fillna(float(default_value) if default_value not in ("", None) else 0.0)
+
+    return aligned
+
+
+def predict_batch(model_obj, df: pd.DataFrame) -> pd.DataFrame:
+    df = standardize_to_model_schema(df, model_obj, default_row)
+    output = df.copy()
+
+    if hasattr(model_obj, "predict_proba"):
+        proba = model_obj.predict_proba(df)
+        classes = list(getattr(model_obj, "classes_", [0, 1]))
+        pos_index = classes.index(1) if 1 in classes else 1 if proba.shape[1] > 1 else 0
+        preds = model_obj.predict(df)
+        output["prediction"] = preds
+        output["probability"] = proba[:, pos_index] if proba.ndim == 2 else proba
+        output["risk_label"] = np.where(
+            output["probability"] >= 0.75,
+            "Riesgo alto",
+            np.where(output["probability"] >= 0.45, "Riesgo medio", "Riesgo bajo"),
+        )
+        return output
+
+    output["prediction"] = model_obj.predict(df)
+    return output
+
+
 def predict(model, df: pd.DataFrame):
+    df = standardize_to_model_schema(df, model, default_row)
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(df)[0]
         classes = list(getattr(model, "classes_", [0, 1]))
@@ -793,7 +915,7 @@ st.markdown(
 
 page = st.radio(
     "Navegación",
-    ["Inicio", "Predicción", "Explicabilidad", "Configuración técnica"],
+    ["Inicio", "Predicción", "Procesamiento por lotes", "Explicabilidad", "Configuración técnica"],
     horizontal=True,
     label_visibility="collapsed",
 )
@@ -1012,6 +1134,53 @@ elif page == "Explicabilidad":
         st.info("Primero ejecuta una predicción para generar una explicación local.")
     else:
         render_local_shap(model, explainer, st.session_state.last_input)
+
+elif page == "Procesamiento por lotes":
+    st.markdown('<div class="section-title">Procesamiento por lotes</div>', unsafe_allow_html=True)
+    st.caption("Carga un CSV con uno o más registros. Si entra un solo registro, además se muestra SHAP.")
+
+    if not columns:
+        st.warning("No se encontraron columnas en model_columns.pkl. Revisa el artefacto.")
+    else:
+        uploaded = st.file_uploader("Sube un CSV para clasificar", type=["csv"])
+
+        st.markdown("#### Perfil base usado para completar columnas faltantes")
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "feature": list(default_row.keys())[:20],
+                    "default": list(default_row.values())[:20],
+                }
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        if uploaded is not None:
+            try:
+                raw_df = pd.read_csv(uploaded)
+                batch_df = align_batch_dataframe(raw_df, columns, default_row)
+                preds_df = predict_batch(model, batch_df)
+
+                st.success(f"Se procesaron {len(preds_df)} registros.")
+                st.dataframe(preds_df, use_container_width=True)
+
+                csv_bytes = preds_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "Descargar predicciones CSV",
+                    data=csv_bytes,
+                    file_name="batch_predictions.csv",
+                    mime="text/csv",
+                )
+
+                if len(preds_df) == 1:
+                    st.markdown('<div class="section-title">Explicación SHAP del único registro</div>', unsafe_allow_html=True)
+                    render_local_shap(model, explainer, batch_df.iloc[[0]])
+                else:
+                    st.info("Como el archivo contiene más de un registro, solo se muestran las predicciones.")
+
+            except Exception as exc:
+                st.error(f"No se pudo procesar el archivo CSV: {exc}")
 
 elif page == "Configuración técnica":
     st.markdown('<div class="section-title">Configuración técnica</div>', unsafe_allow_html=True)
