@@ -3,22 +3,22 @@ steps:
     args:
       - build
       - -t
-      - us-central1-docker.pkg.dev/ml-big-data-q2-up/river-accidents/river-accidents-app:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/ml-big-data-q2-up/credit-risk/credit-risk-app:$COMMIT_SHA
       - .
 
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - us-central1-docker.pkg.dev/ml-big-data-q2-up/river-accidents/river-accidents-app:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/ml-big-data-q2-up/credit-risk/credit-risk-app:$COMMIT_SHA
 
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
     args:
       - run
       - deploy
-      - river-accidents-app
+      - credit-risk-app
       - --image
-      - us-central1-docker.pkg.dev/ml-big-data-q2-up/river-accidents/river-accidents-app:$COMMIT_SHA
+      - us-central1-docker.pkg.dev/ml-big-data-q2-up/credit-risk/credit-risk-app:$COMMIT_SHA
       - --region
       - us-central1
       - --allow-unauthenticated
@@ -29,7 +29,7 @@ steps:
       - --timeout
       - "3600"
       - --set-env-vars
-      - PROJECT_ID=ml-big-data-q2-up,BUCKET_NAME=us-accidents-am-up-02,DATA_PREFIX=raw/
+      - BUCKET_NAME=am-up-01-credit-risk2,ARTIFACT_PREFIX=xgb_optuna_v2,MODEL_BLOB=xgb_optuna_v2/xgboost_credit_risk.pkl,COLUMNS_BLOB=xgb_optuna_v2/model_columns.pkl,METADATA_BLOB=xgb_optuna_v2/model_metadata.pkl
 
 images:
-  - us-central1-docker.pkg.dev/ml-big-data-q2-up/river-accidents/river-accidents-app:$COMMIT_SHA
+  - us-central1-docker.pkg.dev/ml-big-data-q2-up/credit-risk/credit-risk-app:$COMMIT_SHA
