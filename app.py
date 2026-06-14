@@ -39,6 +39,96 @@ MODEL_BLOB = os.getenv("MODEL_BLOB", f"{ARTIFACT_PREFIX}/xgboost_credit_risk.pkl
 COLUMNS_BLOB = os.getenv("COLUMNS_BLOB", f"{ARTIFACT_PREFIX}/model_columns.pkl")
 METADATA_BLOB = os.getenv("METADATA_BLOB", f"{ARTIFACT_PREFIX}/model_metadata.pkl")
 
+DEFAULT_PREDICTION_VALUES = {
+    "loan_amnt": 12000.0,
+    "int_rate": 12.7400,
+    "installment": 375.4300,
+    "annual_inc": 65000.0,
+    "dti": 17.5700,
+    "delinq_2yrs": 0.0,
+    "inq_last_6mths": 0.0,
+    "open_acc": 11.0,
+    "pub_rec": 0.0,
+    "revol_bal": 11140.0,
+    "revol_util": 52.3000,
+    "total_acc": 23.0,
+    "mort_acc": 1.0,
+    "pub_rec_bankruptcies": 0.0,
+    "tax_liens": 0.0,
+    "term_ 60 months": 0.0,
+    "grade_B": 0.0,
+    "grade_C": 0.0,
+    "grade_D": 0.0,
+    "grade_E": 0.0,
+    "grade_F": 0.0,
+    "grade_G": 0.0,
+    "sub_grade_A2": 0.0,
+    "sub_grade_A3": 0.0,
+    "sub_grade_A4": 0.0,
+    "sub_grade_A5": 0.0,
+    "sub_grade_B1": 0.0,
+    "sub_grade_B2": 0.0,
+    "sub_grade_B3": 0.0,
+    "sub_grade_B4": 0.0,
+    "sub_grade_B5": 0.0,
+    "sub_grade_C1": 0.0,
+    "sub_grade_C2": 0.0,
+    "sub_grade_C3": 0.0,
+    "sub_grade_C4": 0.0,
+    "sub_grade_C5": 0.0,
+    "sub_grade_D1": 0.0,
+    "sub_grade_D2": 0.0,
+    "sub_grade_D3": 0.0,
+    "sub_grade_D4": 0.0,
+    "sub_grade_D5": 0.0,
+    "sub_grade_E1": 0.0,
+    "sub_grade_E2": 0.0,
+    "sub_grade_E3": 0.0,
+    "sub_grade_E4": 0.0,
+    "sub_grade_E5": 0.0,
+    "sub_grade_F1": 0.0,
+    "sub_grade_F2": 0.0,
+    "sub_grade_F3": 0.0,
+    "sub_grade_F4": 0.0,
+    "sub_grade_F5": 0.0,
+    "sub_grade_G1": 0.0,
+    "sub_grade_G2": 0.0,
+    "sub_grade_G3": 0.0,
+    "sub_grade_G4": 0.0,
+    "sub_grade_G5": 0.0,
+    "emp_length_10+ years": 1.0,
+    "emp_length_2 years": 0.0,
+    "emp_length_3 years": 0.0,
+    "emp_length_4 years": 0.0,
+    "emp_length_5 years": 0.0,
+    "emp_length_6 years": 0.0,
+    "emp_length_7 years": 0.0,
+    "emp_length_8 years": 0.0,
+    "emp_length_9 years": 0.0,
+    "emp_length__lt_ 1 year": 0.0,
+    "home_ownership_MORTGAGE": 0.0,
+    "home_ownership_NONE": 0.0,
+    "home_ownership_OTHER": 0.0,
+    "home_ownership_OWN": 0.0,
+    "home_ownership_RENT": 0.0,
+    "verification_status_Source Verified": 0.0,
+    "verification_status_Verified": 0.0,
+    "application_type_Joint App": 0.0,
+    "purpose_credit_card": 0.0,
+    "purpose_debt_consolidation": 0.0,
+    "purpose_educational": 0.0,
+    "purpose_home_improvement": 0.0,
+    "purpose_house": 0.0,
+    "purpose_major_purchase": 0.0,
+    "purpose_medical": 0.0,
+    "purpose_moving": 0.0,
+    "purpose_other": 0.0,
+    "purpose_renewable_energy": 0.0,
+    "purpose_small_business": 0.0,
+    "purpose_vacation": 0.0,
+    "purpose_wedding": 0.0,
+}
+
 
 # =========================================================
 # STYLE
@@ -489,6 +579,10 @@ def build_input_widgets(columns: list[str], metadata: dict[str, Any]) -> dict[st
 def build_default_row(columns: list[str], metadata: dict[str, Any]) -> dict[str, Any]:
     defaults: dict[str, Any] = {}
     for feature in columns:
+        if feature in DEFAULT_PREDICTION_VALUES:
+            defaults[feature] = DEFAULT_PREDICTION_VALUES[feature]
+            continue
+
         kind = infer_feature_kind(feature, metadata)
         category_values = feature_categories(feature, metadata)
         default = feature_default(feature, metadata, kind)
