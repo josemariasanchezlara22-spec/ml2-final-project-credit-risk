@@ -23,7 +23,7 @@ def render_local_shap(model_obj, explainer_obj, row_df: pd.DataFrame):
         return
 
     if explainer_obj is None:
-        st.info("No se pudo construir un explainer SHAP para este modelo.")
+        st.info("No se pudo construir un explainer SHAP para este modelo. _")
         return
 
     try:
